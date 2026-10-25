@@ -2,6 +2,8 @@
 
 [PatchCore](https://github.com/amazon-science/patchcore-inspection) image anomaly detection that runs entirely in the browser using plain HTML, CSS and JavaScript. It has no build step and no server-side inference, and images never leave the device.
 
+**Live demo:** https://adamczykj95.github.io/patchcore-js/ (Chrome or Edge for WebGPU; the first visit downloads the 100 MB model, which is then cached).
+
 - **Fit** a memory bank from defect-free images in the browser, or **load** one converted from a model trained with patchcore-inspection.
 - **Inspect** images and get an anomaly score plus a heatmap overlay. You can calibrate a threshold, evaluate AUROC on labelled images, and save banks to IndexedDB or download them as `.pcbank` files.
 - **Backends:** WebGPU (about 60 ms per image on an RTX 3060) or WebAssembly on the CPU (about 200 ms per image with 8 threads), via [ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/) 1.27.0 loaded from jsDelivr.
