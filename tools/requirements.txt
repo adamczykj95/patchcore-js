@@ -1,0 +1,19 @@
+# One-time model export (tools/export_onnx.py, tools/check_export.py)
+torch
+torchvision
+onnx
+onnxruntime
+onnxconverter-common
+# Converting patchcore-inspection models and making parity references
+# (tools/export_bank.py, tools/make_reference.py)
+faiss-cpu
+numpy
+scikit-learn
+# imported by patchcore-inspection itself
+timm
+scipy
+tqdm
+click
+matplotlib
+pandas
+pillow

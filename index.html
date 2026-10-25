@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PatchCore Inspector</title>
+<meta name="description" content="PatchCore image anomaly detection running entirely in the browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23384bd6'/%3E%3Cpath d='M8 8h7v7H8zM17 8h7v7h-7zM8 17h7v7H8z' fill='%23fff' opacity='.9'/%3E%3Cpath d='M17 17h7v7h-7z' fill='%23ff8a3d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M8 8h7v7H8zM17 8h7v7h-7zM8 17h7v7H8z" class="tile"/><path d="M17 17h7v7h-7z" class="hot"/></svg>
+    <div>
+      <h1>PatchCore Inspector</h1>
+      <p>Image anomaly detection that runs locally in your browser</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="status" class="status" data-state="loading"><span class="dot"></span><span id="status-text">Starting…</span></span>
+    <button id="open-settings" class="icon-btn" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- ============ Left: memory bank ============ -->
+  <aside class="column">
+    <section class="card" aria-labelledby="bank-title">
+      <div class="card-head">
+        <h2 id="bank-title"><span class="step">1</span>Memory bank</h2>
+        <div class="segmented" role="tablist">
+          <button role="tab" aria-selected="true" data-tab="fit">Fit</button>
+          <button role="tab" aria-selected="false" data-tab="load">Load</button>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="fit">
+        <p class="hint">Add defect-free images of one product. PatchCore stores their patch features and flags anything that doesn't resemble them.</p>
+        <div class="dropzone" id="fit-drop" tabindex="0">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <div><strong>Drop good images or a folder</strong><span>PNG, JPEG, WebP, BMP</span></div>
+          <div class="drop-actions">
+            <label class="btn small">Files<input type="file" id="fit-files" accept="image/*" multiple hidden></label>
+            <label class="btn small">Folder<input type="file" id="fit-folder" webkitdirectory hidden></label>
+          </div>
+        </div>
+        <div class="filelist" id="fit-list" hidden>
+          <div class="thumbs" id="fit-thumbs"></div>
+          <div class="filelist-meta"><span id="fit-count"></span><button class="link" id="fit-clear">Clear</button></div>
+        </div>
+
+        <div class="field">
+          <div class="field-row"><label for="coreset">Coreset size</label><output id="coreset-out">10%</output></div>
+          <input type="range" id="coreset" min="1" max="25" step="1" value="10">
+          <p class="field-note" id="coreset-note">Fraction of patch features kept. 10% is the paper default; 1% is faster with a small accuracy cost.</p>
+        </div>
+        <label class="check"><input type="checkbox" id="holdout" checked> Hold out 10% of images to calibrate the threshold</label>
+
+        <div class="actions">
+          <button class="btn primary" id="fit-btn" disabled>Build memory bank</button>
+          <button class="btn ghost" id="fit-cancel" hidden>Cancel</button>
+        </div>
+        <div class="progress" id="fit-progress" hidden>
+          <div class="progress-label"><span id="fit-phase"></span><span id="fit-eta"></span></div>
+          <div class="bar"><div id="fit-bar"></div></div>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="load" hidden>
+        <p class="hint">Open a <code>.pcbank</code> file exported from this app or converted from patchcore-inspection with <code>tools/export_bank.py</code>.</p>
+        <label class="btn block">Open .pcbank file<input type="file" id="bank-file" accept=".pcbank,application/octet-stream" hidden></label>
+        <h3 class="subhead">Saved in this browser</h3>
+        <ul class="saved" id="saved-list"><li class="empty">No saved banks yet.</li></ul>
+      </div>
+    </section>
+
+    <section class="card" id="bank-card" hidden aria-labelledby="current-title">
+      <div class="card-head"><h2 id="current-title">Active bank</h2><span class="pill" id="bank-source"></span></div>
+      <label class="sr-only" for="bank-name">Bank name</label>
+      <input class="name-input" id="bank-name" spellcheck="false">
+      <dl class="stats">
+        <div><dt>Patches</dt><dd id="bank-count">–</dd></div>
+        <div><dt>Size</dt><dd id="bank-size">–</dd></div>
+        <div><dt>Images</dt><dd id="bank-images">–</dd></div>
+      </dl>
+      <div class="actions">
+        <button class="btn" id="bank-save">Save in browser</button>
+        <button class="btn" id="bank-download">Download .pcbank</button>
+      </div>
+    </section>
+
+    <section class="card" id="threshold-card" hidden aria-labelledby="thr-title">
+      <div class="card-head"><h2 id="thr-title">Decision threshold</h2></div>
+      <div class="field">
+        <div class="field-row"><label for="threshold">Anomaly score ≥</label><input type="number" id="threshold-num" step="0.01" min="0" class="num"></div>
+        <input type="range" id="threshold" min="0" max="10" step="0.01">
+        <p class="field-note" id="threshold-note">Not calibrated. Score a few known-good images to set it.</p>
+      </div>
+      <label class="btn block">Calibrate from good images<input type="file" id="calib-files" accept="image/*" multiple hidden></label>
+    </section>
+  </aside>
+
+  <!-- ============ Right: inspection ============ -->
+  <div class="column wide">
+    <section class="card" aria-labelledby="inspect-title">
+      <div class="card-head">
+        <h2 id="inspect-title"><span class="step">2</span>Inspect</h2>
+        <div class="toolbar">
+          <label class="mini">Overlay <input type="range" id="opacity" min="0" max="100" value="60"></label>
+          <select id="scale-mode" aria-label="Heatmap scale">
+            <option value="threshold">Scale: threshold</option>
+            <option value="image">Scale: per image</option>
+          </select>
+          <select id="sort" aria-label="Sort results">
+            <option value="added">Order added</option>
+            <option value="score">Highest score</option>
+            <option value="name">Name</option>
+          </select>
+          <button class="btn small ghost" id="results-clear" disabled>Clear</button>
+        </div>
+      </div>
+      <div class="dropzone large" id="inspect-drop" tabindex="0" data-disabled="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <div><strong>Drop images to inspect</strong><span id="inspect-hint">Build or load a memory bank first</span></div>
+        <div class="drop-actions">
+          <label class="btn small">Files<input type="file" id="inspect-files" accept="image/*" multiple hidden></label>
+          <label class="btn small">Folder<input type="file" id="inspect-folder" webkitdirectory hidden></label>
+        </div>
+      </div>
+      <div class="summary" id="summary" hidden></div>
+      <div class="legend" id="legend" hidden>
+        <span id="legend-lo"></span><div class="ramp"></div><span id="legend-hi"></span>
+      </div>
+      <div class="results" id="results"></div>
+    </section>
+
+    <details class="card" id="eval-card">
+      <summary><h2><span class="step">3</span>Evaluate on labelled images</h2><span class="hint inline">AUROC and a suggested threshold</span></summary>
+      <div class="eval-grid">
+        <div class="dropzone compact" id="eval-good" tabindex="0">
+          <div><strong>Good images</strong><span id="eval-good-count">none</span></div>
+          <div class="drop-actions"><label class="btn small">Add<input type="file" id="eval-good-files" accept="image/*" multiple hidden></label><label class="btn small">Folder<input type="file" id="eval-good-folder" webkitdirectory hidden></label></div>
+        </div>
+        <div class="dropzone compact" id="eval-bad" tabindex="0">
+          <div><strong>Defective images</strong><span id="eval-bad-count">none</span></div>
+          <div class="drop-actions"><label class="btn small">Add<input type="file" id="eval-bad-files" accept="image/*" multiple hidden></label><label class="btn small">Folder<input type="file" id="eval-bad-folder" webkitdirectory hidden></label></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="eval-run" disabled>Run evaluation</button>
+        <button class="btn ghost" id="eval-reset">Reset</button>
+      </div>
+      <div class="progress" id="eval-progress" hidden><div class="progress-label"><span id="eval-phase"></span><span></span></div><div class="bar"><div id="eval-bar"></div></div></div>
+      <div id="eval-out" hidden>
+        <dl class="stats">
+          <div><dt>Image AUROC</dt><dd id="eval-auroc">–</dd></div>
+          <div><dt>Best F1</dt><dd id="eval-f1">–</dd></div>
+          <div><dt>At threshold</dt><dd id="eval-thr">–</dd></div>
+        </dl>
+        <svg id="eval-hist" class="hist" role="img" aria-label="Score distributions"></svg>
+        <div class="actions"><button class="btn" id="eval-apply">Use suggested threshold</button></div>
+      </div>
+    </details>
+  </div>
+</main>
+
+<footer class="foot">
+  Implements <a href="https://github.com/amazon-science/patchcore-inspection" target="_blank" rel="noopener">PatchCore</a>
+  (Roth et al., CVPR 2022): WideResNet-50 features from layer2 and layer3, greedy coreset memory bank, nearest-neighbour scoring.
+  Images never leave this device. <a href="tests/parity.html">Parity test</a>
+</footer>
+
+<dialog id="detail" class="detail">
+  <form method="dialog" class="detail-head">
+    <div><h2 id="detail-name"></h2><p id="detail-meta"></p></div>
+    <button class="icon-btn" aria-label="Close" value="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </form>
+  <div class="detail-body">
+    <figure><canvas id="detail-image"></canvas><figcaption>Model input (resized + cropped)</figcaption></figure>
+    <figure><canvas id="detail-overlay"></canvas><figcaption>Anomaly map overlay</figcaption></figure>
+  </div>
+  <div class="detail-foot">
+    <span id="detail-timing"></span>
+    <button class="btn small" id="detail-download">Download overlay PNG</button>
+  </div>
+</dialog>
+
+<dialog id="settings" class="settings">
+  <form method="dialog">
+    <div class="detail-head"><div><h2>Settings</h2><p>Changing the runtime reloads the model; the active bank is kept.</p></div></div>
+    <div class="field"><label for="set-backend">Compute backend</label>
+      <select id="set-backend"><option value="auto">Auto (WebGPU if available)</option><option value="webgpu">WebGPU</option><option value="wasm">WebAssembly (CPU)</option></select></div>
+    <div class="field"><label for="set-precision">Feature extractor precision</label>
+      <select id="set-precision"><option value="fp32">fp32: matches the reference exactly (100 MB)</option><option value="fp16">fp16: half the download, WebGPU only (50 MB)</option></select></div>
+    <div class="field"><label for="set-model">Model</label><select id="set-model"></select></div>
+    <div class="field"><label for="set-cache">Feature cache during fit (MB)</label>
+      <input type="number" id="set-cache" min="0" step="64" value="768" class="num wide">
+      <p class="field-note">Above this, images are embedded a second time instead of keeping every patch in memory.</p></div>
+    <div class="field"><label for="set-seed">Random seed (coreset)</label><input type="number" id="set-seed" value="0" class="num wide"></div>
+    <div class="actions end">
+      <button class="btn ghost" value="cancel">Cancel</button>
+      <button class="btn primary" value="apply" id="settings-apply">Apply</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

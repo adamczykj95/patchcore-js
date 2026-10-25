@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PatchCore Parity</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #1d2127; --muted: #69707a; --ok: #1a7f37; --bad: #c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15181c; --fg: #e4e7eb; --muted: #9aa1ab; --ok: #4ac26b; --bad: #ff6b6b; } }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 24px 16px; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 16px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-variant-numeric: tabular-nums; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
+  .pass { color: var(--ok); font-weight: 600; } .fail { color: var(--bad); font-weight: 600; }
+  pre { white-space: pre-wrap; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PatchCore parity test</h1>
+  <p>Compares this browser implementation with reference outputs from patchcore-inspection
+     (<code>tools/make_reference.py</code>). Query options: <code>?backend=auto|webgpu|wasm</code>,
+     <code>&amp;precision=fp32|fp16</code>, <code>&amp;category=bottle</code>, <code>&amp;limit=N</code>,
+     <code>&amp;fit=1</code> (also build a bank in the browser and measure AUROC),
+     <code>&amp;coreset=0.1</code>.</p>
+  <table id="results"><thead><tr><th>Check</th><th>Value</th><th>Target</th><th></th></tr></thead><tbody></tbody></table>
+  <pre id="log"></pre>
+</main>
+<script type="module">
+import { PatchCore } from '../js/patchcore.js';
+import { preprocess } from '../js/preprocess.js';
+import { decodeBank } from '../js/bank.js';
+import { auroc, correlation } from '../js/scoring.js';
+
+const q = new URLSearchParams(location.search);
+const category = q.get('category') || 'bottle';
+const base = `../reference/${category}/`;
+const logEl = document.getElementById('log');
+const tbody = document.querySelector('#results tbody');
+const log = (m) => { logEl.textContent += m + '\n'; console.log(m); };
+const report = { checks: [], done: false };
+window.__parity = report;
+
+function row(name, value, target, pass) {
+  report.checks.push({ name, value, target, pass });
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${name}</td><td>${value}</td><td>${target}</td>`
+    + `<td class="${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : 'FAIL'}</td>`;
+  tbody.append(tr);
+}
+const fetchBuf = async (u) => (await fetch(u)).arrayBuffer();
+const root = (p) => `../${p}`;
+
+try {
+  const ref = await (await fetch(base + 'reference.json')).json();
+  const pc = await PatchCore.create({
+    backend: q.get('backend') || 'auto', precision: q.get('precision') || 'fp32',
+    modelsUrl: '../models/',
+    onStatus: (m, frac) => { if (frac === undefined || frac === 1) log(m); },
+  });
+  report.backend = pc.backend;
+  report.precision = pc.cfg.precision;
+  log(`backend ${pc.backend} (${pc.rt.deviceLabel}), precision ${pc.cfg.precision}`);
+
+  // 1. preprocessing
+  const prepRef = new Float32Array(await fetchBuf(base + 'prep.bin'));
+  const prep = await preprocess(root(ref.prep_image), pc.cfg);
+  let prepErr = 0;
+  for (let i = 0; i < prepRef.length; i++) prepErr = Math.max(prepErr, Math.abs(prepRef[i] - prep.tensor[i]));
+  row('Preprocessing max |Δ| (PIL resize port)', prepErr.toExponential(2), '< 1e-5', prepErr < 1e-5);
+
+  // 2. scoring against the reference bank
+  const bank = decodeBank(await fetchBuf(base + ref.bank));
+  pc.setBank(bank);
+  log(`reference bank ${bank.header.count} × ${bank.header.dim}`);
+  const limit = Number(q.get('limit')) || ref.images.length;
+  const subset = ref.images.slice(0, limit);
+  const mapsRef = new Float32Array(await fetchBuf(base + 'maps.bin'));
+  const S = ref.imagesize;
+  const scores = [];
+  let maxRel = 0, minCorr = 1, maxMapRel = 0;
+  const times = [];
+  for (let i = 0; i < subset.length; i++) {
+    const r = await pc.predict(root(subset[i].path));
+    times.push(r.timings);
+    scores.push(r.score);
+    maxRel = Math.max(maxRel, Math.abs(r.score - subset[i].score) / subset[i].score);
+    const m = ref.maps.indexOf(i);
+    if (m >= 0) {
+      const refMap = mapsRef.subarray(m * S * S, (m + 1) * S * S);
+      minCorr = Math.min(minCorr, correlation(r.map, refMap));
+      let peak = 0, err = 0;
+      for (let k = 0; k < refMap.length; k++) { peak = Math.max(peak, refMap[k]); err = Math.max(err, Math.abs(r.map[k] - refMap[k])); }
+      maxMapRel = Math.max(maxMapRel, err / peak);
+    }
+    if (i % 10 === 9) log(`scored ${i + 1}/${subset.length}`);
+  }
+  const tol = pc.cfg.precision === 'fp16' ? 0.02 : 0.01;
+  row(`Image score max relative error (${subset.length} images)`, maxRel.toExponential(2), `< ${tol}`, maxRel < tol);
+  row('Anomaly map min correlation', minCorr.toFixed(5), '> 0.99', minCorr > 0.99);
+  row('Anomaly map max |Δ| / peak', maxMapRel.toExponential(2), `< ${tol}`, maxMapRel < tol);
+  const labels = subset.map((x) => x.label);
+  const refAuroc = auroc(subset.map((x) => x.score), labels);
+  const ourAuroc = auroc(scores, labels);
+  if (!Number.isNaN(ourAuroc)) {
+    row('Image AUROC with reference bank', ourAuroc.toFixed(4), `${refAuroc.toFixed(4)} (Python)`, Math.abs(ourAuroc - refAuroc) < 1e-3);
+  }
+  const avg = (k) => times.slice(1).reduce((a, t) => a + t[k], 0) / Math.max(1, times.length - 1);
+  report.timings = { preprocess: avg('preprocess'), embed: avg('embed'), knn: avg('knn'), post: avg('post'), total: avg('total') };
+  log(`per-image ms: ${Object.entries(report.timings).map(([k, v]) => `${k} ${v.toFixed(0)}`).join(', ')}`);
+
+  // 3. optional: fit a bank in the browser from the training images
+  if (q.get('fit')) {
+    const coreset = Number(q.get('coreset') || ref.coreset);
+    let last = '';
+    const fitted = await pc.fit(ref.train_images.map(root), {
+      coreset, name: `${category}-browser`,
+      onProgress: (phase, d, t) => {
+        const msg = `${phase} ${d}/${t}`;
+        if (phase !== last || d === t || d % 50 === 0) log(msg);
+        last = phase;
+      },
+    });
+    report.fit = fitted.header.timings_ms;
+    log(`fit: bank ${fitted.header.count} (Python ${ref.bank_size}); ms ${JSON.stringify(fitted.header.timings_ms)}`);
+    const expected = Math.floor(ref.train_images.length * pc.patches * coreset);
+    row('Browser-fit bank size', fitted.header.count, `${expected} (int(N·${coreset}) as in Python)`, fitted.header.count === expected);
+    const fitScores = [];
+    for (const img of ref.images) fitScores.push((await pc.predict(root(img.path))).score);
+    const fitAuroc = auroc(fitScores, ref.images.map((x) => x.label));
+    row('Image AUROC, bank fitted in browser', fitAuroc.toFixed(4), `≥ ${(ref.image_auroc - 0.01).toFixed(4)}`, fitAuroc >= ref.image_auroc - 0.01);
+    const pearson = correlation(Float32Array.from(fitScores), Float32Array.from(ref.images.map((x) => x.score)));
+    row('Score correlation, browser-fit vs Python bank', pearson.toFixed(4), '> 0.98', pearson > 0.98);
+  }
+} catch (err) {
+  log('ERROR: ' + (err.stack || err));
+  report.error = String(err.stack || err);
+}
+report.done = true;
+report.pass = !report.error && report.checks.every((c) => c.pass);
+log(report.pass ? 'ALL PASSED' : 'FAILURES');
+</script>
+</body>
+</html>

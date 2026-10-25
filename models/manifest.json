@@ -1,0 +1,52 @@
+{
+  "models": [
+    {
+      "id": "wrn50_l2l3_s224_p3",
+      "backbone": "wideresnet50",
+      "layers": [
+        "layer2",
+        "layer3"
+      ],
+      "resize": 256,
+      "imagesize": 224,
+      "patchsize": 3,
+      "grid": [
+        28,
+        28
+      ],
+      "dim": 1024,
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ],
+      "files": {
+        "fp32": {
+          "path": "embed_wrn50_l2l3_s224_p3.onnx",
+          "bytes": 99441254,
+          "sha256": "8a09c70cb4ae578b"
+        },
+        "fp16": {
+          "path": "embed_wrn50_l2l3_s224_p3.fp16.onnx",
+          "bytes": 49781682,
+          "sha256": "925079d35ff9ee06"
+        }
+      }
+    }
+  ],
+  "knn": {
+    "path": "knn.onnx",
+    "bytes": 1266,
+    "sha256": "5a29e6eaffff4929"
+  },
+  "matmul": {
+    "path": "matmul.onnx",
+    "bytes": 134,
+    "sha256": "10b5dcc47610e742"
+  }
+}
